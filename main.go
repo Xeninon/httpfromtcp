@@ -1,22 +1,32 @@
 package main
 
 import (
+	"net"
 	"io"
-	"os"
 	"fmt"
 	"strings"
 )
 
 func main()  {
-	file, err := os.Open("./messages.txt")
+	listener, err := net.Listen("tcp", ":42069")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	defer listener.Close()
 
-	ch := getLinesChannel(file)
-	for line := range ch {
-		fmt.Printf("read: %s\n", line)
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Printf("ConnectionError: %v\n", err)
+			continue
+		}
+
+		fmt.Println("Connection Accepted")
+
+		for line := range getLinesChannel(conn) {
+			fmt.Println(line)
+		}
 	}
 }
 
@@ -37,7 +47,6 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 			}
 		}
 		close(ch)
-		f.Close()
 	}()
 	return ch
 }
