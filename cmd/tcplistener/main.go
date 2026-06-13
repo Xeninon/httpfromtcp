@@ -1,13 +1,13 @@
 package main
 
 import (
-	"net"
-	"io"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 )
 
-func main()  {
+func main() {
 	listener, err := net.Listen("tcp", ":42069")
 	if err != nil {
 		fmt.Println(err)
@@ -34,7 +34,7 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 	ch := make(chan string)
 	current := ""
 	b := make([]byte, 8)
-	go func(){
+	go func() {
 		for {
 			if _, err := f.Read(b); err == io.EOF {
 				break
