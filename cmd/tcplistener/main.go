@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
-	"strings"
+
+	"github.com/Xeninon/httpfromtcp/internal/request"
 )
 
 func main() {
@@ -24,30 +24,15 @@ func main() {
 
 		fmt.Println("Connection Accepted")
 
-		for line := range getLinesChannel(conn) {
-			fmt.Println(line)
+		req, err := request.RequestFromReader(conn)
+		if err != nil {
+			fmt.Printf("RequestError: %v\n", err)
+			continue
 		}
-	}
-}
 
-func getLinesChannel(f io.ReadCloser) <-chan string {
-	ch := make(chan string)
-	current := ""
-	b := make([]byte, 8)
-	go func() {
-		for {
-			if _, err := f.Read(b); err == io.EOF {
-				break
-			}
-			parts := strings.Split(string(b), "\n")
-			current += parts[0]
-			if len(parts) > 1 {
-				ch <- current
-				current = parts[1]
-			}
-		}
-		ch <- current
-		close(ch)
-	}()
-	return ch
+		fmt.Println("Request line:")
+		fmt.Println("- Method:", req.RequestLine.Method)
+		fmt.Println("- Target:", req.RequestLine.RequestTarget)
+		fmt.Println("- Version:", req.RequestLine.HttpVersion)
+	}
 }

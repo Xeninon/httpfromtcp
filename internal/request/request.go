@@ -7,13 +7,14 @@ import (
 	"unicode"
 )
 
+const crlf = "\r\n"
 const bufferSize = 8
 
 type State int
 
 const (
-	Initialized State = iota
-	Done
+	requestStateInitialized State = iota
+	requestStateDone
 )
 
 type Request struct {
@@ -28,10 +29,10 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := &Request{State: Initialized}
+	request := &Request{State: requestStateInitialized}
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
-	for request.State != Done {
+	for request.State != requestStateDone {
 		if readToIndex == cap(buf) {
 			tmp := make([]byte, 2*cap(buf))
 			copy(tmp, buf)
@@ -40,7 +41,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		bytesRead, err := reader.Read(buf[readToIndex:])
 		if err == io.EOF {
-			request.State = Done
+			request.State = requestStateDone
 			break
 		}
 
@@ -61,23 +62,23 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 func (r *Request) parse(data []byte) (int, error) {
 	switch r.State {
-	case Initialized:
+	case requestStateInitialized:
 		bytesParsed, requestLine, err := parseRequestLine(data)
 		if bytesParsed != 0 {
 			r.RequestLine = requestLine
-			r.State = Done
+			r.State = requestStateDone
 		}
 
 		return bytesParsed, err
-	case Done:
-		return 0, errors.New("parsed done request")
+	case requestStateDone:
+		return 0, errors.New("Parsed done request")
 	default:
-		return 0, errors.New("unknown request state")
+		return 0, errors.New("Unknown request state")
 	}
 }
 
 func parseRequestLine(data []byte) (int, RequestLine, error) {
-	request, _, found := strings.Cut(string(data), "\r\n")
+	request, _, found := strings.Cut(string(data), crlf)
 	if !found {
 		return 0, RequestLine{}, nil
 	}
@@ -101,5 +102,5 @@ func parseRequestLine(data []byte) (int, RequestLine, error) {
 		return 0, RequestLine{}, errors.New("Invalid Version")
 	}
 
-	return len([]byte(request + "\r\n")), RequestLine{HttpVersion: version, RequestTarget: target, Method: method}, nil
+	return len([]byte(request + crlf)), RequestLine{HttpVersion: version, RequestTarget: target, Method: method}, nil
 }
