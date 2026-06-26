@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"unicode"
+
+	"github.com/Xeninon/httpfromtcp/internal/headers"
 )
 
 const crlf = "\r\n"
@@ -14,12 +16,14 @@ type State int
 
 const (
 	requestStateInitialized State = iota
+	requestStateParsingHeaders
 	requestStateDone
 )
 
 type Request struct {
 	RequestLine RequestLine
-	State       State
+	Headers     headers.Headers
+	state       State
 }
 
 type RequestLine struct {
@@ -29,10 +33,10 @@ type RequestLine struct {
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := &Request{State: requestStateInitialized}
+	request := &Request{state: requestStateInitialized, Headers: headers.NewHeaders()}
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
-	for request.State != requestStateDone {
+	for request.state != requestStateDone {
 		if readToIndex == cap(buf) {
 			tmp := make([]byte, 2*cap(buf))
 			copy(tmp, buf)
@@ -41,7 +45,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 		bytesRead, err := reader.Read(buf[readToIndex:])
 		if err == io.EOF {
-			request.State = requestStateDone
 			break
 		}
 
@@ -57,24 +60,49 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		copy(tmp, buf[bytesParsed:])
 		buf = tmp
 	}
+	if request.state == requestStateParsingHeaders {
+		return nil, errors.New("Headers didn't finish")
+	}
 	return request, nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	switch r.State {
+	switch r.state {
 	case requestStateInitialized:
 		bytesParsed, requestLine, err := parseRequestLine(data)
 		if bytesParsed != 0 {
 			r.RequestLine = requestLine
-			r.State = requestStateDone
+			r.state = requestStateParsingHeaders
 		}
 
 		return bytesParsed, err
+	case requestStateParsingHeaders:
+		totalBytesParsed := 0
+		for r.state != requestStateDone {
+			n, err := r.parseSingle(data[totalBytesParsed:])
+			if err != nil {
+				return 0, err
+			}
+			if n == 0 {
+				break
+			}
+			totalBytesParsed += n
+		}
+		return totalBytesParsed, nil
 	case requestStateDone:
 		return 0, errors.New("Parsed done request")
 	default:
 		return 0, errors.New("Unknown request state")
 	}
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
+	n, done, err := r.Headers.Parse(data)
+	if done {
+		r.state = requestStateDone
+	}
+
+	return n, err
 }
 
 func parseRequestLine(data []byte) (int, RequestLine, error) {
