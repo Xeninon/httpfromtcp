@@ -3,6 +3,7 @@ package request
 import (
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -17,12 +18,14 @@ type State int
 const (
 	requestStateInitialized State = iota
 	requestStateParsingHeaders
+	requestStateParsingBody
 	requestStateDone
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	state       State
 }
 
@@ -44,8 +47,12 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		}
 
 		bytesRead, err := reader.Read(buf[readToIndex:])
+		EOF := false
 		if err == io.EOF {
-			break
+			EOF = true
+		}
+		if err != nil && err != io.EOF {
+			return nil, err
 		}
 
 		readToIndex += bytesRead
@@ -59,9 +66,13 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		tmp := make([]byte, max(readToIndex, bufferSize))
 		copy(tmp, buf[bytesParsed:])
 		buf = tmp
+
+		if EOF {
+			break
+		}
 	}
-	if request.state == requestStateParsingHeaders {
-		return nil, errors.New("Headers didn't finish")
+	if request.state != requestStateDone {
+		return nil, errors.New("Parsing didn't finish")
 	}
 	return request, nil
 }
@@ -78,7 +89,7 @@ func (r *Request) parse(data []byte) (int, error) {
 		return bytesParsed, err
 	case requestStateParsingHeaders:
 		totalBytesParsed := 0
-		for r.state != requestStateDone {
+		for r.state != requestStateParsingBody {
 			n, err := r.parseSingle(data[totalBytesParsed:])
 			if err != nil {
 				return 0, err
@@ -89,6 +100,28 @@ func (r *Request) parse(data []byte) (int, error) {
 			totalBytesParsed += n
 		}
 		return totalBytesParsed, nil
+	case requestStateParsingBody:
+		lengthStr, exists := r.Headers.Get("Content-Length")
+		if !exists {
+			r.state = requestStateDone
+			return 0, nil
+		}
+
+		length, err := strconv.Atoi(lengthStr)
+		if err != nil || length < 0 {
+			return 0, errors.New("Improper Content-Length value")
+		}
+
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > length {
+			return 0, errors.New("Body longer than Content-Length")
+		}
+
+		if len(r.Body) == length {
+			r.state = requestStateDone
+		}
+
+		return len(data), nil
 	case requestStateDone:
 		return 0, errors.New("Parsed done request")
 	default:
@@ -99,7 +132,7 @@ func (r *Request) parse(data []byte) (int, error) {
 func (r *Request) parseSingle(data []byte) (int, error) {
 	n, done, err := r.Headers.Parse(data)
 	if done {
-		r.state = requestStateDone
+		r.state = requestStateParsingBody
 	}
 
 	return n, err
