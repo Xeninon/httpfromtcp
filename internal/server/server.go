@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
+
+	"github.com/Xeninon/httpfromtcp/internal/response"
 )
 
-type Server struct{
+type Server struct {
 	listener net.Listener
 	isClosed atomic.Bool
 }
@@ -49,9 +51,14 @@ func (s *Server) listen() {
 
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
-	conn.Write([]byte("HTTP/1.1 200 OK\r\n" +
-		"Content-Type: text/plain\r\n" +
-		"Content-Length: 13\r\n" +
-		"\r\n" +
-		"Hello World!\n"))
+	err := response.WriteStatusLine(conn, response.StatusCode(200))
+	if err != nil {
+		fmt.Printf("HandlingError: %v\n", err)
+	}
+
+	headers := response.GetDefaultHeaders(0)
+	err = response.WriteHeaders(conn, headers)
+	if err != nil {
+		fmt.Printf("HandlingError: %v\n", err)
+	}
 }
