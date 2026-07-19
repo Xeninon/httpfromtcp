@@ -99,13 +99,15 @@ func (r *Request) parse(data []byte) (int, error) {
 			}
 			totalBytesParsed += n
 		}
+
+		lengthStr, exists := r.Headers.Get("Content-Length")
+		if !exists || lengthStr == "0" {
+			r.state = requestStateDone
+			return totalBytesParsed, nil
+		}
 		return totalBytesParsed, nil
 	case requestStateParsingBody:
-		lengthStr, exists := r.Headers.Get("Content-Length")
-		if !exists {
-			r.state = requestStateDone
-			return 0, nil
-		}
+		lengthStr, _ := r.Headers.Get("Content-Length")
 
 		length, err := strconv.Atoi(lengthStr)
 		if err != nil || length < 0 {
