@@ -12,8 +12,8 @@ import (
 type StatusCode int
 
 const (
-	StatusCodeOK StatusCode = 200
-	StatusCodeBadRequest StatusCode = 400
+	StatusCodeOK                  StatusCode = 200
+	StatusCodeBadRequest          StatusCode = 400
 	StatusCodeInternalServerError StatusCode = 500
 )
 
@@ -27,7 +27,7 @@ const (
 )
 
 type Writer struct {
-	Writer io.Writer
+	Writer      io.Writer
 	writerState writerState
 }
 
@@ -88,4 +88,41 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 
 	w.writerState = writerStateDone
 	return w.Writer.Write(p)
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.writerState != writerStateWritingBody {
+		return 0, errors.New("response written out of order")
+	}
+
+	nTotal := 0
+	n, err := fmt.Fprintf(w.Writer, "%x\r\n", len(p))
+	if err != nil {
+		return nTotal, err
+	}
+	nTotal += n
+
+	n, err = w.Writer.Write(p)
+	if err != nil {
+		return nTotal, err
+	}
+	nTotal += n
+
+	n, err = w.Writer.Write([]byte("\r\n"))
+	if err != nil {
+		return nTotal, err
+	}
+	nTotal += n
+
+	return nTotal, nil
+}
+
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+
+	if w.writerState != writerStateWritingBody {
+		return 0, errors.New("response written out of order")
+	}
+
+	w.writerState = writerStateDone
+	return w.Writer.Write([]byte("0\r\n\r\n"))
 }
