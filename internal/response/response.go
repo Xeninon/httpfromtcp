@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 
 	"github.com/Xeninon/httpfromtcp/internal/headers"
 )
@@ -124,5 +125,26 @@ func (w *Writer) WriteChunkedBodyDone() (int, error) {
 	}
 
 	w.writerState = writerStateDone
-	return w.Writer.Write([]byte("0\r\n\r\n"))
+	return w.Writer.Write([]byte("0\r\n"))
+}
+
+func (w *Writer) WriteTrailers(h headers.Headers) error {
+	trailerVal, _ := h.Get("trailer")
+
+	trailers := strings.SplitSeq(trailerVal, ",")
+	for trailer := range trailers {
+		trailer := strings.TrimSpace(trailer)
+		value, exists := h.Get(trailer)
+		if !exists {
+			continue
+		}
+
+		_, err := fmt.Fprintf(w.Writer, "%v: %v\r\n", trailer, value)
+		if err != nil {
+			return err
+		}
+	}
+
+	_, err := w.Writer.Write([]byte("\r\n"))
+	return err
 }
